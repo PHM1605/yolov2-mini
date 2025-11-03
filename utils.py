@@ -55,7 +55,7 @@ def non_max_suppression(bboxes, iou_threshold, threshold, box_format="corners"):
 # pred_boxes: list of preds, each row [image_idx, class_pred, prob, x1, y1, x2, y2]
 # true_boxes: list of trues, each row [image_idx, class_true, prob, x1, y1, x2, y2]
 def mean_average_precision(pred_boxes, true_boxes, iou_threshold=0.5, box_format="midpoint", num_classes=20):
-  avg_precisions = []
+  avg_precisions = [] # average precision for many classes
   epsilon = 1e-6
   for c in range(num_classes):
     # save list of detections and list of ground_truths OF ONE CLASS
@@ -71,11 +71,48 @@ def mean_average_precision(pred_boxes, true_boxes, iou_threshold=0.5, box_format
     # {<imageId>:<number-boxes>} => {"0":3, "1":2, ...}
     amount_bboxes = Counter([gt[0] for gt in ground_truths])
     # to flag which true boxes have been detected
-    # {"0":[0,0,0],"1":[0,0]}
+    # amount_bboxes: {"0":[0,0,0],"1":[0,0]}
     for key, val in amount_bboxes.items():
       amount_bboxes[key] = torch.zeros(val)
 
+    # sort detections in high-probs first order
+    detections.sort(key=lambda x:x[2], reverse=True)
+    TP, FP, total_true_bboxes = torch.zeros(len(detections)), torch.zeros(len(detections)), len(ground_truths)
+    if total_true_bboxes == 0:
+      continue
+    for detection_idx, detection in enumerate(detections):
+      # to compare that detection of that image, get all ground-truths from that image 
+      ground_truth_img = [bbox for bbox in ground_truths if bbox[0] == detection[0]]
+      num_gts = len(ground_truth_img)
+      best_iou = 0
+      for idx, gt in enumerate(ground_truth_img):
+        iou = intersection_over_union(
+          torch.tensor(detection[3:]),
+          torch.tensor(gt[3:]),
+          box_format=box_format
+        )
+        if iou > best_iou:
+          best_iou = iou 
+          best_gt_idx = idx 
+      if best_iou > iou_threshold:
+        if amount_bboxes[detection[0]][best_gt_idx] == 0: # if that true-box hasn't been mapped
+          TP[detection_idx] = 1
+          amount_bboxes[detection[0]][best_gt_idx] = 1
+        else: # if that true-box is already marked
+          FP[detection_idx] = 1
+      else: # if that pred-box can't be mapped to any true
+        FP[detection_idx] = 1
     
+    # the lower we reduce the threshold (of probs), the more TP & FP detections we have
+    TP_cumsum, FP_cumsum = torch.cumsum(TP, dim=0), torch.cumsum(FP, dim=0)
+    recalls = TP_cumsum / (total_true_bboxes + epsilon)
+    precisions = torch.divide(TP_cumsum, (TP_cumsum+FP_cumsum+epsilon))
+    # if probs-threshold too high => FP=0 => precision=1
+    precisions = torch.cat((torch.tensor([1]), precisions))
+    recalls = torch.cat((torch.tensor([0]), recalls))
+    avg_precisions.append(torch.trapz(precisions, recalls))
+
+  return sum(avg_precisions) / (len(avg_precisions) + epsilon)
 
 # Convert bboxes output from Model in CELL COORDS to ENTIRE IMAGE COORDS
 def convert_cellboxes(predictions, S=7):
@@ -165,3 +202,13 @@ def get_bboxes(loader, model, iou_threshold, threshold, pred_format="cells", box
   # each element [image_idx, class_pred, prob, x1, y1, x2, y2]
   return all_pred_boxes, all_true_boxes
 
+def save_checkpoint(state, filename, exit_training=False):
+  print("=> Saving checkpoint")
+  torch.save(state, filename)
+  if exit_training: exit()
+
+def load_checkpoint(checkpoint, model, optimizer):
+  print("=> Loading checkpoint")
+  model.load_state_dict(checkpoint["state_dict"])
+  optimizer.load_state_dict(checkpoint["optimizer"])
+  

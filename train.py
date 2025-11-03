@@ -13,7 +13,7 @@ from tqdm import tqdm
 from dataset import VOCDataset, split_import_data
 from model import Yolov1
 from loss import YoloLoss
-from utils import get_bboxes, mean_average_precision
+from utils import get_bboxes, mean_average_precision, save_checkpoint
 
 root_dir = "import_data"
 classes_file = "classes.txt"
@@ -85,4 +85,5 @@ def main():
       save_checkpoint(checkpoint, filename=LOAD_MODEL_FILE, exit_training=True)
     
     train_fn(train_loader, model, optimizer, loss_fn)
+
 main()

@@ -1,2 +1,5 @@
 data
 import_data
+*.pt
+*.pth
+__pycache__

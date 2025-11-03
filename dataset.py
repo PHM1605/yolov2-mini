@@ -55,7 +55,7 @@ def split_import_data(root_dir, train_ratio=0.7, val_ratio=0.2, test_ratio=0.1):
 
 class VOCDataset(torch.utils.data.Dataset):
   def __init__(self, img_files, root_dir, S=7, B=2, C=20, transform=None):
-    self.files = img_files 
+    self.img_files = img_files 
     self.classes_file = "classes.txt"
     self.root_dir = root_dir
     self.transform = transform  
@@ -67,7 +67,7 @@ class VOCDataset(torch.utils.data.Dataset):
     return len(self.img_files)
   
   def __getitem__(self, index):
-    img_name = self.files[index]
+    img_name = self.img_files[index]
     img_path = os.path.join(self.root_dir, img_name)
     label_path = os.path.join(self.root_dir, os.path.splitext(img_name)[0] + ".txt")
     image = Image.open(img_path).convert("RGB")
@@ -75,11 +75,8 @@ class VOCDataset(torch.utils.data.Dataset):
     boxes = []
     with open(label_path) as f:
       for label in f.readlines():
-        class_label, x, y, width, height = [
-          float(x) 
-          if float(x)!=int(float(x))
-          else int(x) for x in label.strip().split()
-        ]
+        class_label, x, y, width, height = map(float, label.strip().split())
+        class_label = int(class_label)
         boxes.append([class_label, x, y, width, height])
     
     if self.transform:
