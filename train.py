@@ -6,8 +6,14 @@ import matplotlib.pyplot as plt
 import xml.etree.ElementTree as ET 
 import torch.optim as optim
 from PIL import Image
-from dataset import VOCDataset, split_import_data
 from torchvision import transforms
+from torch.utils.data import DataLoader
+from tqdm import tqdm
+
+from dataset import VOCDataset, split_import_data
+from model import Yolov1
+from loss import YoloLoss
+from utils import get_bboxes, mean_average_precision
 
 root_dir = "import_data"
 classes_file = "classes.txt"
@@ -33,9 +39,26 @@ PIN_MEMORY = True
 LOAD_MODEL = False 
 LOAD_MODEL_FILE = "best.pt"
 
+def train_fn(train_loader, model, optimizer, loss_fn):
+  loop = tqdm(train_loader, leave=True)
+  mean_loss = [] 
+
+  for batch_idx, (x, y) in enumerate(loop):
+    x, y = x.to(DEVICE), y.to(DEVICE)
+    out = model(x)
+    loss = loss_fn(out, y)
+    mean_loss.append(loss.item())
+    optimizer.zero_grad()
+    loss.backward()
+    optimizer.step()
+    # update progress bar 
+    loop.set_postfix(loss=loss.item())
+  
+  print(f"Mean loss was {sum(mean_loss) / len(mean_loss)}")
+
 def main():
   print(DEVICE) 
-  # model = Yolov1(split_size=7, num_boxes=2, num_classes=20).to(DEVICE)
+  model = Yolov1(split_size=7, num_boxes=2, num_classes=20).to(DEVICE)
   optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE, weight_decay=WEIGHT_DECAY)
   loss_fn = YoloLoss()
 
@@ -49,6 +72,17 @@ def main():
   
   for epoch in range(EPOCHS):
     pred_boxes, target_boxes = get_bboxes(train_loader, model, iou_threshold=0.5, threshold=0.4, device=DEVICE)
+    mean_avg_prec = mean_average_precision(pred_boxes, target_boxes, iou_threshold=0.5, box_format="midpoint")
+    print(f"epoch: {epoch} Train mAP: {mean_avg_prec}")
 
-
+    k=0
+    if (mean_avg_prec > 0.9) and (k==0):
+      k = 1
+      checkpoint = {
+        "state_dict": model.state_dict(),
+        "optimizer": optimizer.state_dict()
+      }
+      save_checkpoint(checkpoint, filename=LOAD_MODEL_FILE, exit_training=True)
+    
+    train_fn(train_loader, model, optimizer, loss_fn)
 main()

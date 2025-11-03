@@ -2,6 +2,7 @@ import json, torch, os
 import numpy as np
 import random
 from torchvision import transforms 
+from PIL import Image 
 
 def convert_json_to_txt(label_dir, label_file):
   json_path = os.path.join(label_dir, label_file)
@@ -94,3 +95,6 @@ class VOCDataset(torch.utils.data.Dataset):
         label_matrix[i,j,int(class_label)] = 1
         label_matrix[i,j,21:25] = torch.tensor([x_cell, y_cell, w_cell, h_cell])
     return image, label_matrix 
+
+if __name__ == "__main__":
+  prepare_data()
